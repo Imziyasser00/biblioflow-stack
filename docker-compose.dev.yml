@@ -1,0 +1,74 @@
+services:
+  ui:
+    build:
+      context: ../biblioflow-frontend/biblioflow-frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ../biblioflow-frontend/biblioflow-frontend:/app
+      - /app/node_modules
+    ports: ["4200:4200"]
+    environment:
+      CHOKIDAR_USEPOLLING: "1"
+    networks: [biblio_front]
+
+  backend:
+    build:
+      context: ../biblioflow-api
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ../biblioflow-api:/app
+      - /app/node_modules
+    ports: ["3003:3000"]
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/${POSTGRES_DB}
+      MONGODB_URL: mongodb://${MONGODB_USER}:${MONGODB_PASS}@mongo:27017/${MONGODB_DB}?authSource=${MONGODB_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGIN: http://localhost:4200
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks: [biblio_back]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db-init/postgres:/docker-entrypoint-initdb.d:ro
+    networks: [biblio_back]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    command: ["--auth"]
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGODB_DB}
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpw
+    volumes:
+      - mongodata:/data/db
+      - ./db-init/mongo:/docker-entrypoint-initdb.d:ro
+    networks: [biblio_back]
+    healthcheck:
+      test: ["CMD", "mongosh", "--username", "root", "--password", "rootpw", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+networks:
+  biblio_front:
+  biblio_back:
+
+volumes:
+  pgdata:
+  mongodata:
